@@ -16,8 +16,16 @@ function validateRule(rule) {
 
 export function registerAdminRoutes(router) {
   router.post('/api/login', async (request, { config }) => {
+    // 沒設這兩個的話,登入一定會失敗;直接講清楚是哪裡沒設,不要丟「伺服器錯誤」。
+    if (!config.adminPassword) {
+      return json({ error: '尚未設定後台密碼,請執行:npx wrangler secret put ADMIN_PASSWORD' }, { status: 503 });
+    }
+    if (!config.sessionSecret) {
+      return json({ error: '尚未設定 SESSION_SECRET,請執行:npx wrangler secret put SESSION_SECRET' }, { status: 503 });
+    }
+
     const { password } = await readJson(request);
-    if (!config.adminPassword || !timingSafeEqual(password ?? '', config.adminPassword)) {
+    if (!timingSafeEqual(password ?? '', config.adminPassword)) {
       return json({ error: '密碼錯誤' }, { status: 401 });
     }
     const token = await createSessionToken(config.sessionSecret);

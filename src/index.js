@@ -18,10 +18,31 @@ function readConfig(env) {
   };
 }
 
+/** 列出還沒設好的必要項目(只回傳名稱,不會洩漏內容)。 */
+export function missingConfig(config) {
+  const required = {
+    ADMIN_PASSWORD: config.adminPassword,
+    SESSION_SECRET: config.sessionSecret,
+    FB_APP_SECRET: config.appSecret,
+    FB_VERIFY_TOKEN: config.verifyToken,
+    FB_PAGE_ACCESS_TOKEN: config.pageAccessToken,
+    FB_PAGE_ID: config.pageId,
+  };
+  return Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
+}
+
 export function buildRouter() {
   const router = new Router();
 
-  router.get('/healthz', (request, { config }) => json({ ok: true, dryRun: config.dryRun }));
+  router.get('/healthz', (request, { config }) => {
+    const missing = missingConfig(config);
+    return json({
+      ok: true,
+      dryRun: config.dryRun,
+      ready: missing.length === 0,
+      missing,
+    });
+  });
 
   router.get('/webhook', (request, { config, url }) => handleVerification(url, config.verifyToken));
 

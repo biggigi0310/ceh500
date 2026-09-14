@@ -74,7 +74,7 @@ const commentPayload = (overrides = {}) => ({
 test('healthz 可用', async () => {
   const response = await call(createEnv(), '/healthz');
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, dryRun: true });
+  assert.deepEqual(await response.json(), { ok: true, dryRun: true, ready: true, missing: [] });
 });
 
 test('沒有綁 D1 時回報設定錯誤而不是 500 崩潰', async () => {
@@ -221,4 +221,33 @@ test('不存在的 API 路徑回 404 JSON,而不是後台網頁', async () => {
   const response = await call(createEnv(), '/api/does-not-exist');
   assert.equal(response.status, 404);
   assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+});
+
+test('沒設 ADMIN_PASSWORD 時,登入回傳看得懂的說明而不是伺服器錯誤', async () => {
+  const response = await call(createEnv({ ADMIN_PASSWORD: '' }), '/api/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password: 'anything' }),
+  });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /ADMIN_PASSWORD/);
+});
+
+test('沒設 SESSION_SECRET 時,登入回傳看得懂的說明', async () => {
+  const env = createEnv({ SESSION_SECRET: '', FB_APP_SECRET: '' });
+  const response = await call(env, '/api/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password: 'pw123' }),
+  });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /SESSION_SECRET/);
+});
+
+test('healthz 會列出還沒設定的項目', async () => {
+  const response = await call(createEnv({ FB_PAGE_ID: '', ADMIN_PASSWORD: '' }), '/healthz');
+  const body = await response.json();
+  assert.equal(body.ready, false);
+  assert.deepEqual(body.missing.sort(), ['ADMIN_PASSWORD', 'FB_PAGE_ID']);
+  assert.equal((await (await call(createEnv(), '/healthz')).json()).ready, true);
 });
