@@ -95,7 +95,7 @@ async function loadLogs() {
     <div class="item">
       <div class="item-head">
         <div class="item-title">
-          ${escapeHtml(log.from || '(匿名)')}
+          ${escapeHtml(log.author || '(匿名)')}
           <span class="badge ${log.status === 'sent' ? 'ok' : 'err'}">${log.status === 'sent' ? '已私訊' : '失敗'}</span>
         </div>
         <div class="meta">${new Date(log.at).toLocaleString('zh-TW')}</div>
@@ -229,6 +229,16 @@ $('f-keywordMode').addEventListener('change', toggleKeywords);
 $('refresh-logs').addEventListener('click', () => loadLogs().catch((err) => toast(err.message)));
 $('load-posts').addEventListener('click', loadPosts);
 $('run-diagnose').addEventListener('click', diagnose);
+
+$('subscribe-page').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/subscribe', { method: 'POST' });
+    toast(`訂閱成功:${result.subscribedFields.join(', ')}`);
+    await diagnose();
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 $('preview-btn').addEventListener('click', async () => {
   const rule = formToRule();

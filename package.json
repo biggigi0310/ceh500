@@ -1,20 +1,22 @@
 {
   "name": "fb-comment-autoreply",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Facebook 粉專留言自動私訊物件連結 + 自動回覆「已私訊」",
+  "description": "Facebook 粉專留言自動私訊物件連結 + 自動回覆「已私訊」(Cloudflare Workers)",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node --test test/*.test.js",
-    "subscribe": "node scripts/subscribe.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create fb-autoreply",
+    "db:init": "wrangler d1 execute fb-autoreply --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute fb-autoreply --local --file=./schema.sql",
+    "tail": "wrangler tail",
+    "test": "node --test test/*.test.js"
   },
-  "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }

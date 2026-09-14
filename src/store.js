@@ -1,10 +1,4 @@
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import crypto from 'node:crypto';
-
-const MAX_LOGS = 500;
-const MAX_PROCESSED = 5000;
+import { randomId } from './lib/crypto.js';
 
 export const DEFAULT_DM_TEMPLATE =
   '{{name}} 您好,謝謝您的留言 🙏\n' +
@@ -13,162 +7,195 @@ export const DEFAULT_DM_TEMPLATE =
 
 export const DEFAULT_PUBLIC_REPLY_TEMPLATE = '{{name}} 您好,已私訊物件連結給您囉,麻煩查收訊息 📩';
 
-function emptyData() {
-  return {
-    version: 1,
-    settings: {
-      enabled: true,
-      publicReplyEnabled: true,
-      skipNestedComments: true,
-      skipOwnComments: true,
-    },
-    rules: [],
-    processed: {},
-    logs: [],
-  };
-}
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  publicReplyEnabled: true,
+  skipNestedComments: true,
+  skipOwnComments: true,
+};
 
-/** 補齊缺少的欄位,讓舊檔案或手動編輯過的檔案也能安全載入。 */
-function normalize(raw) {
-  const base = emptyData();
-  if (!raw || typeof raw !== 'object') return base;
-  return {
-    version: base.version,
-    settings: { ...base.settings, ...(raw.settings ?? {}) },
-    rules: Array.isArray(raw.rules) ? raw.rules.map(normalizeRule) : [],
-    processed: raw.processed && typeof raw.processed === 'object' ? raw.processed : {},
-    logs: Array.isArray(raw.logs) ? raw.logs : [],
-  };
-}
+const MAX_LOGS = 500;
 
-function normalizeRule(rule) {
+function rowToRule(row) {
+  let keywords = [];
+  try {
+    const parsed = JSON.parse(row.keywords ?? '[]');
+    if (Array.isArray(parsed)) keywords = parsed;
+  } catch {
+    keywords = [];
+  }
   return {
-    id: rule.id || crypto.randomUUID(),
-    name: rule.name ?? '',
-    postId: String(rule.postId ?? '').trim(),
-    enabled: rule.enabled !== false,
-    link: rule.link ?? '',
-    dmTemplate: rule.dmTemplate || DEFAULT_DM_TEMPLATE,
-    publicReplyTemplate: rule.publicReplyTemplate ?? DEFAULT_PUBLIC_REPLY_TEMPLATE,
-    keywords: Array.isArray(rule.keywords) ? rule.keywords.filter(Boolean) : [],
-    keywordMode: rule.keywordMode === 'any' ? 'any' : 'all_comments',
-    createdAt: rule.createdAt || new Date().toISOString(),
-    updatedAt: rule.updatedAt || rule.createdAt || new Date().toISOString(),
+    id: row.id,
+    name: row.name ?? '',
+    postId: row.post_id,
+    enabled: row.enabled === 1 || row.enabled === true,
+    link: row.link ?? '',
+    dmTemplate: row.dm_template,
+    publicReplyTemplate: row.public_reply_template ?? '',
+    keywords,
+    keywordMode: row.keyword_mode === 'any' ? 'any' : 'all_comments',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
 export class Store {
-  #file;
-  #data;
-  #writeChain = Promise.resolve();
-
-  constructor(file) {
-    this.#file = file;
-    this.#data = emptyData();
+  constructor(db) {
+    this.db = db;
   }
 
-  load() {
-    try {
-      const text = fs.readFileSync(this.#file, 'utf8');
-      this.#data = normalize(JSON.parse(text));
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-      this.#data = emptyData();
-    }
-    return this;
+  async getSettings() {
+    const { results } = await this.db.prepare('SELECT key, value FROM settings').all();
+    const stored = Object.fromEntries((results ?? []).map((row) => [row.key, row.value === '1']));
+    return { ...DEFAULT_SETTINGS, ...stored };
   }
 
-  /** 以「寫暫存檔再 rename」的方式落盤,避免程式中斷時檔案毀損。 */
-  save() {
-    const snapshot = JSON.stringify(this.#data, null, 2);
-    this.#writeChain = this.#writeChain.then(async () => {
-      await fsp.mkdir(path.dirname(this.#file), { recursive: true });
-      const tmp = `${this.#file}.${process.pid}.tmp`;
-      await fsp.writeFile(tmp, snapshot, 'utf8');
-      await fsp.rename(tmp, this.#file);
-    }).catch(() => {});
-    return this.#writeChain;
+  async updateSettings(patch) {
+    const statements = Object.entries(patch)
+      .filter(([key]) => key in DEFAULT_SETTINGS)
+      .map(([key, value]) => this.db
+        .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        .bind(key, value ? '1' : '0'));
+    if (statements.length) await this.db.batch(statements);
+    return this.getSettings();
   }
 
-  get settings() {
-    return { ...this.#data.settings };
+  async listRules() {
+    const { results } = await this.db.prepare('SELECT * FROM rules ORDER BY created_at DESC').all();
+    return (results ?? []).map(rowToRule);
   }
 
-  updateSettings(patch) {
-    this.#data.settings = { ...this.#data.settings, ...patch };
-    this.save();
-    return this.settings;
+  async getRule(id) {
+    const row = await this.db.prepare('SELECT * FROM rules WHERE id = ?').bind(id).first();
+    return row ? rowToRule(row) : null;
   }
 
-  get rules() {
-    return this.#data.rules.map((r) => ({ ...r }));
+  /** 只查這篇貼文的規則和萬用規則,避免每次留言都把整張表撈出來。 */
+  async findRuleForPost(postId) {
+    const row = await this.db
+      .prepare(`SELECT * FROM rules
+                WHERE enabled = 1 AND post_id IN (?, '*')
+                ORDER BY CASE WHEN post_id = '*' THEN 1 ELSE 0 END
+                LIMIT 1`)
+      .bind(postId ?? '')
+      .first();
+    return row ? rowToRule(row) : null;
   }
 
-  getRule(id) {
-    const found = this.#data.rules.find((r) => r.id === id);
-    return found ? { ...found } : null;
-  }
-
-  upsertRule(input) {
+  async upsertRule(input) {
     const now = new Date().toISOString();
-    const existingIndex = input.id ? this.#data.rules.findIndex((r) => r.id === input.id) : -1;
-    if (existingIndex >= 0) {
-      const merged = normalizeRule({ ...this.#data.rules[existingIndex], ...input, updatedAt: now });
-      this.#data.rules[existingIndex] = merged;
-      this.save();
-      return { ...merged };
-    }
-    const created = normalizeRule({ ...input, id: crypto.randomUUID(), createdAt: now, updatedAt: now });
-    this.#data.rules.push(created);
-    this.save();
-    return { ...created };
-  }
+    const existing = input.id ? await this.getRule(input.id) : null;
+    const merged = { ...(existing ?? {}), ...input };
 
-  deleteRule(id) {
-    const before = this.#data.rules.length;
-    this.#data.rules = this.#data.rules.filter((r) => r.id !== id);
-    const removed = before !== this.#data.rules.length;
-    if (removed) this.save();
-    return removed;
-  }
-
-  isProcessed(commentId) {
-    return Boolean(this.#data.processed[commentId]);
-  }
-
-  getProcessed(commentId) {
-    const entry = this.#data.processed[commentId];
-    return entry ? { ...entry } : null;
-  }
-
-  markProcessed(commentId, entry) {
-    this.#data.processed[commentId] = { ...entry, at: new Date().toISOString() };
-    const keys = Object.keys(this.#data.processed);
-    if (keys.length > MAX_PROCESSED) {
-      for (const key of keys.slice(0, keys.length - MAX_PROCESSED)) {
-        delete this.#data.processed[key];
-      }
-    }
-    this.save();
-  }
-
-  addLog(entry) {
-    this.#data.logs.unshift({ id: crypto.randomUUID(), at: new Date().toISOString(), ...entry });
-    if (this.#data.logs.length > MAX_LOGS) this.#data.logs.length = MAX_LOGS;
-    this.save();
-  }
-
-  getLogs(limit = 100) {
-    return this.#data.logs.slice(0, limit).map((l) => ({ ...l }));
-  }
-
-  stats() {
-    const logs = this.#data.logs;
-    return {
-      rules: this.#data.rules.length,
-      processed: Object.keys(this.#data.processed).length,
-      sent: logs.filter((l) => l.status === 'sent').length,
-      failed: logs.filter((l) => l.status === 'failed').length,
+    const rule = {
+      id: existing?.id ?? randomId(),
+      name: merged.name ?? '',
+      postId: String(merged.postId ?? '').trim(),
+      enabled: merged.enabled !== false,
+      link: merged.link ?? '',
+      dmTemplate: merged.dmTemplate || DEFAULT_DM_TEMPLATE,
+      publicReplyTemplate: merged.publicReplyTemplate ?? DEFAULT_PUBLIC_REPLY_TEMPLATE,
+      keywords: Array.isArray(merged.keywords) ? merged.keywords.filter(Boolean) : [],
+      keywordMode: merged.keywordMode === 'any' ? 'any' : 'all_comments',
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
     };
+
+    await this.db
+      .prepare(`INSERT INTO rules (id, name, post_id, enabled, link, dm_template, public_reply_template,
+                                   keywords, keyword_mode, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name, post_id = excluded.post_id, enabled = excluded.enabled,
+                  link = excluded.link, dm_template = excluded.dm_template,
+                  public_reply_template = excluded.public_reply_template, keywords = excluded.keywords,
+                  keyword_mode = excluded.keyword_mode, updated_at = excluded.updated_at`)
+      .bind(rule.id, rule.name, rule.postId, rule.enabled ? 1 : 0, rule.link, rule.dmTemplate,
+        rule.publicReplyTemplate, JSON.stringify(rule.keywords), rule.keywordMode,
+        rule.createdAt, rule.updatedAt)
+      .run();
+
+    return rule;
+  }
+
+  async deleteRule(id) {
+    const result = await this.db.prepare('DELETE FROM rules WHERE id = ?').bind(id).run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  /**
+   * 用主鍵衝突當作鎖:搶到(真的插入了)才回傳 true。
+   * 兩個 webhook 同時進來也只有一個會拿到,所以不會重複私訊。
+   */
+  async claimComment(commentId, ruleId) {
+    const result = await this.db
+      .prepare('INSERT OR IGNORE INTO processed_comments (comment_id, status, rule_id, at) VALUES (?, ?, ?, ?)')
+      .bind(commentId, 'processing', ruleId ?? null, new Date().toISOString())
+      .run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
+  async markProcessed(commentId, { status, ruleId, error }) {
+    await this.db
+      .prepare('UPDATE processed_comments SET status = ?, rule_id = ?, error = ?, at = ? WHERE comment_id = ?')
+      .bind(status, ruleId ?? null, error ?? null, new Date().toISOString(), commentId)
+      .run();
+  }
+
+  async releaseComment(commentId) {
+    await this.db.prepare('DELETE FROM processed_comments WHERE comment_id = ?').bind(commentId).run();
+  }
+
+  async getProcessed(commentId) {
+    return this.db.prepare('SELECT * FROM processed_comments WHERE comment_id = ?').bind(commentId).first();
+  }
+
+  async addLog(entry) {
+    await this.db
+      .prepare(`INSERT INTO logs (id, at, status, comment_id, post_id, rule_id, rule_name, author, comment,
+                                 dm_message, public_reply, public_reply_error, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(randomId(), new Date().toISOString(), entry.status, entry.commentId ?? null, entry.postId ?? null,
+        entry.ruleId ?? null, entry.ruleName ?? null, entry.author ?? null, entry.comment ?? null,
+        entry.dmMessage ?? null, entry.publicReply ?? null, entry.publicReplyError ?? null, entry.error ?? null)
+      .run();
+
+    // 只留最近的紀錄,免得免費層的資料庫愈長愈大。
+    await this.db
+      .prepare('DELETE FROM logs WHERE seq NOT IN (SELECT seq FROM logs ORDER BY seq DESC LIMIT ?)')
+      .bind(MAX_LOGS)
+      .run();
+  }
+
+  async getLogs(limit = 100) {
+    const { results } = await this.db
+      .prepare('SELECT * FROM logs ORDER BY seq DESC LIMIT ?')
+      .bind(Math.min(limit, MAX_LOGS))
+      .all();
+    return (results ?? []).map((row) => ({
+      id: row.id,
+      at: row.at,
+      status: row.status,
+      commentId: row.comment_id,
+      postId: row.post_id,
+      ruleName: row.rule_name,
+      author: row.author,
+      comment: row.comment,
+      dmMessage: row.dm_message,
+      publicReply: row.public_reply,
+      publicReplyError: row.public_reply_error,
+      error: row.error,
+    }));
+  }
+
+  async stats() {
+    const row = await this.db
+      .prepare(`SELECT
+                  (SELECT COUNT(*) FROM rules)                              AS rules,
+                  (SELECT COUNT(*) FROM processed_comments)                 AS processed,
+                  (SELECT COUNT(*) FROM logs WHERE status = 'sent')         AS sent,
+                  (SELECT COUNT(*) FROM logs WHERE status = 'failed')       AS failed`)
+      .first();
+    return { rules: row?.rules ?? 0, processed: row?.processed ?? 0, sent: row?.sent ?? 0, failed: row?.failed ?? 0 };
   }
 }

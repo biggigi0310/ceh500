@@ -1,0 +1,9 @@
+# 本機測試用的機密設定。複製成 .dev.vars 再填內容(.dev.vars 不會被上傳)。
+# 正式環境請改用 `wrangler secret put <名稱>` 設定,不要寫在任何檔案裡。
+
+FB_APP_SECRET=
+FB_VERIFY_TOKEN=my-verify-token-change-me
+FB_PAGE_ACCESS_TOKEN=
+FB_PAGE_ID=
+ADMIN_PASSWORD=change-me-please
+SESSION_SECRET=

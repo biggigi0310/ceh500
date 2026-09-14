@@ -1,0 +1,28 @@
+name = "fb-comment-autoreply"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# 後台網頁(public/ 底下的檔案)。Workers 會先比對靜態檔案,
+# 沒有對應檔案的路徑(例如 /api/... 和 /webhook)才會進到程式。
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# 建好資料庫後,把 `wrangler d1 create fb-autoreply` 印出來的 database_id 填進來
+[[d1_databases]]
+binding = "DB"
+database_name = "fb-autoreply"
+database_id = "請填入你的 database_id"
+
+[vars]
+FB_GRAPH_VERSION = "v23.0"
+# 先設 true 試跑:邏輯照走、紀錄照寫,但不會真的送出私訊
+DRY_RUN = "true"
+
+# 以下是機密資料,不要寫在這個檔案裡,改用指令設定:
+#   wrangler secret put FB_APP_SECRET
+#   wrangler secret put FB_VERIFY_TOKEN
+#   wrangler secret put FB_PAGE_ACCESS_TOKEN
+#   wrangler secret put FB_PAGE_ID
+#   wrangler secret put ADMIN_PASSWORD
+#   wrangler secret put SESSION_SECRET
