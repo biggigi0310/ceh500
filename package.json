@@ -1,0 +1,20 @@
+{
+  "name": "fb-comment-autoreply",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Facebook 粉專留言自動私訊物件連結 + 自動回覆「已私訊」",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js",
+    "subscribe": "node scripts/subscribe.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}

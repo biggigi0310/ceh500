@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>留言自動私訊後台</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main id="login" class="card login" hidden>
+    <h1>留言自動私訊</h1>
+    <p class="muted">請輸入後台密碼</p>
+    <form id="login-form">
+      <input type="password" id="password" placeholder="密碼" autocomplete="current-password" required>
+      <button type="submit">登入</button>
+    </form>
+    <p id="login-error" class="error" hidden></p>
+  </main>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <strong>留言自動私訊</strong>
+      <div class="topbar-actions">
+        <span id="dry-run-badge" class="badge warn" hidden>演練模式</span>
+        <label class="switch">
+          <input type="checkbox" id="master-switch">
+          <span>啟用自動回覆</span>
+        </label>
+        <button id="logout" class="link">登出</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="rules">物件設定</button>
+      <button class="tab" data-tab="logs">回覆紀錄</button>
+      <button class="tab" data-tab="status">系統狀態</button>
+    </nav>
+
+    <section id="tab-rules" class="tab-panel">
+      <div class="toolbar">
+        <button id="new-rule" class="primary">＋ 新增一則貼文設定</button>
+      </div>
+      <div id="rules-list" class="list"></div>
+    </section>
+
+    <section id="tab-logs" class="tab-panel" hidden>
+      <div class="toolbar">
+        <button id="refresh-logs">重新整理</button>
+        <span id="stats" class="muted"></span>
+      </div>
+      <div id="logs-list" class="list"></div>
+    </section>
+
+    <section id="tab-status" class="tab-panel" hidden>
+      <div class="card">
+        <h2>連線檢查</h2>
+        <button id="run-diagnose">執行檢查</button>
+        <div id="diagnose-result"></div>
+      </div>
+      <div class="card">
+        <h2>其他選項</h2>
+        <label class="switch"><input type="checkbox" id="opt-public-reply"><span>私訊成功後,在留言下面公開回覆</span></label>
+        <label class="switch"><input type="checkbox" id="opt-skip-nested"><span>只處理主留言(忽略留言的回覆)</span></label>
+        <label class="switch"><input type="checkbox" id="opt-skip-own"><span>忽略粉專自己發的留言</span></label>
+      </div>
+      <div class="card">
+        <h2>最近的貼文</h2>
+        <p class="muted">點「用這篇」會把貼文 ID 帶進新增表單。</p>
+        <button id="load-posts">載入貼文</button>
+        <div id="posts-list" class="list"></div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="rule-dialog">
+    <form id="rule-form" method="dialog">
+      <h2 id="rule-dialog-title">貼文設定</h2>
+
+      <label>設定名稱
+        <input id="f-name" placeholder="例:信義區兩房電梯">
+      </label>
+
+      <label>貼文 ID
+        <input id="f-postId" required placeholder="例:1234567890_9876543210,填 * 代表所有貼文">
+        <small class="muted">在「系統狀態 → 最近的貼文」可以直接挑一篇帶入。</small>
+      </label>
+
+      <label>物件連結
+        <input id="f-link" type="url" placeholder="https://...">
+        <small class="muted">在下面的內容用 <code>{{link}}</code> 就會自動帶入這個連結。</small>
+      </label>
+
+      <label>私訊內容
+        <textarea id="f-dm" rows="7" required></textarea>
+        <small class="muted">可用變數:<code>{{name}}</code> 留言者名字、<code>{{link}}</code> 物件連結、<code>{{comment}}</code> 對方留言內容。</small>
+      </label>
+
+      <label>留言下的公開回覆
+        <textarea id="f-public" rows="3"></textarea>
+        <small class="muted">留空白就不會公開回覆。</small>
+      </label>
+
+      <label>觸發條件
+        <select id="f-keywordMode">
+          <option value="all_comments">所有留言都自動私訊</option>
+          <option value="any">只有留言含關鍵字才私訊</option>
+        </select>
+      </label>
+
+      <label id="keywords-field" hidden>關鍵字(用逗號分隔)
+        <input id="f-keywords" placeholder="例:詳細,+1,想看,價格">
+      </label>
+
+      <label class="switch"><input type="checkbox" id="f-enabled" checked><span>啟用這則設定</span></label>
+
+      <div id="preview" class="preview" hidden></div>
+      <p id="rule-error" class="error" hidden></p>
+
+      <div class="dialog-actions">
+        <button type="button" id="preview-btn">預覽</button>
+        <button type="button" id="cancel-rule" class="link">取消</button>
+        <button type="button" id="save-rule" class="primary">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
