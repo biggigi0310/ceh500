@@ -35,17 +35,17 @@ npm install
 npx wrangler login
 ```
 
+`wrangler login` 會跳出瀏覽器要你授權,按「Allow」後回到終端機即可。
+還沒有 Cloudflare 帳號的話,它會順便帶你註冊(免費)。
+
 ### 2. 建資料庫
 
 ```bash
-npm run db:create      # 會印出一段 database_id
+npm run setup:db
 ```
 
-把印出來的 `database_id` 貼進 `wrangler.toml` 的 `[[d1_databases]]` 區塊,然後建表:
-
-```bash
-npm run db:init
-```
+這一行會自動做完三件事:建立 D1 資料庫、把 `database_id` 寫進 `wrangler.toml`、建立資料表。
+重複執行也沒關係,已經存在的資料庫會直接沿用。
 
 ### 3. 設定機密資料
 

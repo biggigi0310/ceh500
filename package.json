@@ -8,9 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "setup:db": "node scripts/setup-db.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:create": "wrangler d1 create fb-autoreply",
     "db:init": "wrangler d1 execute fb-autoreply --remote --file=./schema.sql",
     "db:init:local": "wrangler d1 execute fb-autoreply --local --file=./schema.sql",
     "tail": "wrangler tail",
