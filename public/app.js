@@ -8,12 +8,14 @@ async function api(pathname, options = {}) {
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
-  if (response.status === 401) {
-    showLogin();
-    throw new Error('尚未登入');
-  }
   const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error ?? `請求失敗(${response.status})`);
+
+  if (!response.ok) {
+    // 401 通常代表 session 過期,回登入畫面;但「登入」本身失敗時要讓使用者
+    // 看到真正的原因(密碼錯誤、或伺服器還沒設好),不能一律蓋成「尚未登入」。
+    if (response.status === 401 && pathname !== '/api/login') showLogin();
+    throw new Error(data?.error ?? `請求失敗(${response.status})`);
+  }
   return data;
 }
 
